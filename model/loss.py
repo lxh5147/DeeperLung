@@ -30,8 +30,13 @@ class Loss(nn.Module):
         self.cls_weight = cls_weight
         self.reg_weight = reg_weight
 
-    def forward(self, output, labels, train=True):
-
+    def forward(self, output, labels):
+        '''
+        Compute the loss
+        :param output: tensor, bt, z h w a N
+        :param labels: tensor, bt, z h w a N
+        :return:
+        '''
         batch_size = labels.size(0)
         output = output.view(-1, 5)
         labels = labels.view(-1, 5)
@@ -39,8 +44,9 @@ class Loss(nn.Module):
         pos_output, pos_labels, pos_indices = select_value(output, labels, POSITIVE_LABEL)
 
         neg_output, neg_labels, neg_indices = select_value(output, labels, NEGATIVE_LABEL)
-        neg_output = neg_output[:, 0]
-        neg_labels = neg_labels[:, 0]
+        if len(neg_output) > 0:
+            neg_output = neg_output[:, 0]
+            neg_labels = neg_labels[:, 0]
 
         # In train and val phase, we both choose top k negatives.
         if self.num_hard_neg_per_patch > 0:
@@ -50,10 +56,10 @@ class Loss(nn.Module):
         neg_prob = self.sigmoid(neg_output)
 
         fixed_neg_output, fixed_neg_labels, fixed_neg_idcs = select_value(output, labels, FIXED_NEGATIVE_LABEL)
-
-        fixed_neg_output = fixed_neg_output[:, 0]
-        fixed_neg_labels = fixed_neg_labels[:, 0]
-        fixed_neg_prob = self.sigmoid(fixed_neg_output)
+        if len(fixed_neg_output)>0:
+            fixed_neg_output = fixed_neg_output[:, 0]
+            fixed_neg_labels = fixed_neg_labels[:, 0]
+            fixed_neg_prob = self.sigmoid(fixed_neg_output)
 
         pos_loss = 0
         pos_correct = 0
@@ -66,7 +72,6 @@ class Loss(nn.Module):
         fixed_neg_total = 0
 
         regress_losses = [0] * 4
-
 
         if len(pos_output) > 0:
             pos_prob = self.sigmoid(pos_output[:, 0])
@@ -90,19 +95,14 @@ class Loss(nn.Module):
 
         if len(fixed_neg_output) > 0:
             fixed_neg_loss = self.classify_loss(fixed_neg_output, fixed_neg_labels - FIXED_NEGATIVE_LABEL)
-            fixed_neg_correct = (fixed_neg_prob.data < 0.5).sum()
+            fixed_neg_correct = (fixed_neg_prob < 0.5).sum()
             fixed_neg_total = len(fixed_neg_prob)
-
-        pos_loss_data = pos_loss.item()
-        neg_loss_data = neg_loss.item()
-        fixed_neg_loss_data = fixed_neg_loss.item()
 
         loss = self.cls_weight[0] * pos_loss + self.cls_weight[1] * neg_loss + self.cls_weight[2] * fixed_neg_loss
         for regress_loss in regress_losses:
             loss += self.reg_weight * regress_loss
 
-        # return tensor
-        return [loss, pos_loss_data, neg_loss_data, fixed_neg_loss_data] + regress_losses_data + \
+        return [loss, pos_loss, neg_loss, fixed_neg_loss] + regress_losses + \
                [pos_correct, pos_total, neg_correct, neg_total, fixed_neg_correct, fixed_neg_total]
 
 
