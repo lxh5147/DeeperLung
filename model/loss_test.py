@@ -7,6 +7,12 @@ class MyTestCase(unittest.TestCase):
         output = torch.from_numpy(np.asarray([[2,3],[0,4]], dtype=np.float32))
         labels = torch.from_numpy(np.asarray([[2,3.2],[0,4.2]], dtype=np.float32))
         select_output, select_labels, idcs = select_value(output,labels,2)
-        self.assertEqual(select_output.data, )
-if __name__ == '__main__':
-    unittest.main()
+        self.assertTrue((select_output.numpy()==np.asarray([[2,3]])).all(),'select output')
+        np.testing.assert_almost_equal(select_labels.numpy(), np.asarray([[2, 3.2]]))
+    def test(self):
+        x = 2.
+        t = torch.ones((2,))
+        y=x+t
+        print(y)
+        t.size()[0]
+

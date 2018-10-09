@@ -10,12 +10,12 @@ def hard_mining(neg_output, neg_labels, num_hard):
     neg_labels = torch.index_select(neg_labels, 0, idcs)
     return neg_output, neg_labels, idcs
 
+
 def select_value(output, labels, value):
     idcs = labels[:, 0] == value
     select_output = output[idcs]
     select_labels = labels[idcs]
     return select_output, select_labels, idcs
-
 
 
 class Loss(nn.Module):
@@ -31,7 +31,6 @@ class Loss(nn.Module):
         self.reg_weight = reg_weight
 
     def forward(self, output, labels, train=True):
-
 
         batch_size = labels.size(0)
         output = output.view(-1, 5)
@@ -67,7 +66,7 @@ class Loss(nn.Module):
         fixed_neg_total = 0
 
         regress_losses = [0] * 4
-        regress_losses_data = [0] * 4
+
 
         if len(pos_output) > 0:
             pos_prob = self.sigmoid(pos_output[:, 0])
@@ -79,9 +78,9 @@ class Loss(nn.Module):
                 self.regress_loss(ph, lh),
                 self.regress_loss(pw, lw),
                 self.regress_loss(pd, ld)]
-            regress_losses_data = [l.item() for l in regress_losses]
+
             pos_loss = self.classify_loss(pos_output[:, 0], pos_labels[:, 0])
-            pos_correct = (pos_prob.data >= 0.5).sum()
+            pos_correct = (pos_prob >= 0.5).sum()
             pos_total = len(pos_prob)
 
         if len(neg_output) > 0:
