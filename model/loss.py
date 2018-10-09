@@ -56,7 +56,7 @@ class Loss(nn.Module):
         neg_prob = self.sigmoid(neg_output)
 
         fixed_neg_output, fixed_neg_labels, fixed_neg_idcs = select_value(output, labels, FIXED_NEGATIVE_LABEL)
-        if len(fixed_neg_output)>0:
+        if len(fixed_neg_output) > 0:
             fixed_neg_output = fixed_neg_output[:, 0]
             fixed_neg_labels = fixed_neg_labels[:, 0]
             fixed_neg_prob = self.sigmoid(fixed_neg_output)
@@ -133,35 +133,36 @@ class FocalLoss(nn.Module):
 
     """
 
-    def __init__(self, num_hard=0, alpha=None, gamma=2, size_average=True):
+    def __init__(self, num_hard_neg_per_patch=0, alpha=None, gamma=2, size_average=True):
         super(FocalLoss, self).__init__()
-        self.num_hard = num_hard
+        self.num_hard_neg_per_patch = num_hard_neg_per_patch
         if alpha is None:
             self.alpha = nn.Parameter(torch.ones(1, ))
         else:
-            self.alpha = nn.Parameter(alpha)
+            self.alpha = nn.Parameter(torch.ones(1, ) * alpha)
         self.gamma = gamma
         self.size_average = size_average
         self.sigmoid = nn.Sigmoid()
         self.regress_loss = nn.SmoothL1Loss()
 
-    def forward(self, output, labels, train=True):
+    def forward(self, output, labels):
         batch_size = labels.size(0)
         output = output.view(-1, 5)
         labels = labels.view(-1, 5)
 
-        pos_idcs = labels[:, 0] == POSITIVE_LABEL
-        pos_idcs = pos_idcs.unsqueeze(1).expand(pos_idcs.size(0), 5)
-        pos_output = output[pos_idcs].view(-1, 5)
-        pos_labels = labels[pos_idcs].view(-1, 5)
+        pos_output, pos_labels, pos_indices = select_value(output, labels, POSITIVE_LABEL)
 
-        neg_idcs = labels[:, 0] == NEGATIVE_LABEL
-        neg_output = output[:, 0][neg_idcs]
-        neg_labels = labels[:, 0][neg_idcs]
+        neg_output, neg_labels, neg_indices = select_value(output, labels, NEGATIVE_LABEL)
+        if len(neg_output) > 0:
+            neg_output = neg_output[:, 0]
+            neg_labels = neg_labels[:, 0]
 
-        if self.num_hard > 0 and train:
-            neg_output, neg_labels, _ = hard_mining(neg_output, neg_labels, self.num_hard * batch_size)
+        if self.num_hard_neg_per_patch > 0:
+            neg_output, neg_labels, _ = hard_mining(neg_output, neg_labels,
+                                                    self.num_hard_neg_per_patch * batch_size)
         neg_prob = self.sigmoid(neg_output)
+
+        regress_losses = [0] * 4
 
         if len(pos_output) > 0:
             pos_prob = self.sigmoid(pos_output[:, 0])
@@ -173,30 +174,23 @@ class FocalLoss(nn.Module):
                 self.regress_loss(ph, lh),
                 self.regress_loss(pw, lw),
                 self.regress_loss(pd, ld)]
-            regress_losses_data = [l.item() for l in regress_losses]
 
             pos_loss = -self.alpha * torch.pow(1 - pos_prob, self.gamma) * (pos_prob + 0.0001).log()
             neg_loss = -(1 - self.alpha) * torch.pow(neg_prob, self.gamma) * (1 - neg_prob + 0.0001).log()
 
             if self.size_average:
-                classify_loss = (pos_loss.sum() + neg_loss.sum()) / pos_loss.size()[0]
+                classify_loss = (pos_loss.sum() + neg_loss.sum()) / len(pos_loss)
             else:
                 classify_loss = pos_loss.sum() + neg_loss.sum()
 
             pos_correct = (pos_prob.data >= 0.7).sum()
             pos_total = len(pos_prob)
-
         else:
             regress_losses = [0, 0, 0, 0]
-            regress_losses_data = [0, 0, 0, 0]
             neg_loss = -(1 - self.alpha) * torch.pow(neg_prob, self.gamma) * (1 - neg_prob).log()
-
             classify_loss = neg_loss.sum()
-
             pos_correct = 0
             pos_total = 0
-
-        classify_loss_data = classify_loss.item()
 
         loss = classify_loss
         for regress_loss in regress_losses:
@@ -205,4 +199,4 @@ class FocalLoss(nn.Module):
         neg_correct = (neg_prob.data < 0.3).sum()
         neg_total = len(neg_prob)
 
-        return [loss, classify_loss_data] + regress_losses_data + [pos_correct, pos_total, neg_correct, neg_total]
+        return [loss] + regress_losses + [pos_correct, pos_total, neg_correct, neg_total]
